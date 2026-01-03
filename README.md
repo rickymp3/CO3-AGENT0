@@ -11,13 +11,21 @@ Definitions (fixed in [rc_trajectory.py](rc_trajectory.py)):
 
 Run:
 1) Optional: create venv if desired. No dependencies beyond Python 3.10+.
-2) Execute:
+2) Execute the RC trajectory demo:
 
 ```
 python rc_trajectory.py
 ```
 
 Outputs: tab-separated time series per step (state, action, feasible size, selected and minimum margin, coherence, trend) plus boundary_crossed flag.
+
+PowerShell wrapper terminal (OpenAI key first, then wrapper loop):
+
+```
+python .\rc_trajectory.py --wrapper --api-key $Env:OPENAI_API_KEY
+```
+
+`--api-key` is optional; omitting it will prompt securely (via `getpass`) in PowerShell or other shells. Adjust `--max-tokens` to tune reply length in the wrapper loop.
 
 Observed runs (defaults):
 - Run A start (1,1): feasible size stayed 5, selected margin 1.00, trend 0 across all windows, boundary_crossed False.
