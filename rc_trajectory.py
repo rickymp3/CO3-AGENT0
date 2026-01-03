@@ -120,6 +120,30 @@ class CommunicationWrapper:
                 continue
 
             value_str = match.group("value")
+        The parser looks for ``key=value`` or ``key:value`` tokens, falling back
+        to passthrough words. Only tokens that match known input keys or model
+        keys are retained.
+        """
+
+        tokens = [part.strip() for part in text.replace(";", ",").split(",")]
+        parsed: Dict[str, object] = {}
+
+        known_keys = set(self.input_mapping.keys()) | set(self.input_mapping.values())
+        for token in tokens:
+            if not token:
+                continue
+            if "=" in token:
+                raw_key, raw_value = token.split("=", 1)
+            elif ":" in token:
+                raw_key, raw_value = token.split(":", 1)
+            else:
+                continue
+
+            key = raw_key.strip()
+            if key not in known_keys:
+                continue
+
+            value_str = raw_value.strip()
             try:
                 value: object = float(value_str)
             except ValueError:
@@ -139,6 +163,7 @@ class CommunicationWrapper:
 
     def communicate(
         self, signal: Dict[str, object], model_fn: Callable[[Dict[str, object]], Dict[str, object]]
+        self, signal: Dict[str, object], model_fn
     ) -> Dict[str, object]:  # pragma: no cover - thin wrapper
         """Execute a model function with mapped inputs and outputs."""
 
@@ -150,6 +175,7 @@ class CommunicationWrapper:
     def mediate(
         self, user_text: str, model_fn: Callable[[Dict[str, object]], Dict[str, object]]
     ) -> Dict[str, object]:
+    def mediate(self, user_text: str, model_fn):
         """Full pipeline: parse, normalize, respond with variables, rewrap."""
 
         parsed_human = self.parse_user_signal(user_text)
