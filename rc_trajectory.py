@@ -38,6 +38,134 @@ class StepRecord:
     boundary_crossed: bool
 
 
+@dataclass
+class CommunicationWrapper:
+    """Bidirectional mapper for human-facing signals and model variables.
+
+    The wrapper now includes a mediation step that parses human text, normalizes
+    numeric values onto a 0.0–1.0 scale, passes the mapped variables to a model,
+    and rewraps the model's structured response back into English for the user.
+
+    Keys that are absent from the provided mappings are passed through
+    unchanged, so the wrapper can be used incrementally.
+    """
+
+    input_mapping: Dict[str, str]
+    output_mapping: Dict[str, str]
+    variable_ranges: Dict[str, Tuple[float, float]] | None = None
+
+    def encode_input(self, signal: Dict[str, object]) -> Dict[str, object]:
+        """Map a human input signal into model-facing variables."""
+
+        mapped: Dict[str, object] = {}
+        for human_key, value in signal.items():
+            model_key = self.input_mapping.get(human_key, human_key)
+            mapped[model_key] = value
+        return mapped
+
+    def decode_output(self, response: Dict[str, object]) -> Dict[str, object]:
+        """Map a model response into human-facing variables."""
+
+        mapped: Dict[str, object] = {}
+        for model_key, value in response.items():
+            human_key = self.output_mapping.get(model_key, model_key)
+            mapped[human_key] = value
+        return mapped
+
+    def _normalize_value(self, key: str, value: object) -> object:
+        """Normalize numeric signals to 0.0–1.0 using optional ranges."""
+
+        if not isinstance(value, (int, float)):
+            return value
+
+        ranges = self.variable_ranges or {}
+        low, high = ranges.get(key, (0.0, 1.0))
+        if high == low:
+            return 0.0
+
+        normalized = (float(value) - low) / (high - low)
+        return max(0.0, min(1.0, normalized))
+
+    def normalize_signal(self, signal: Dict[str, object]) -> Dict[str, object]:
+        """Apply numeric normalization to all mapped variables."""
+
+        normalized: Dict[str, object] = {}
+        for key, value in signal.items():
+            normalized[key] = self._normalize_value(key, value)
+        return normalized
+
+    def parse_user_signal(self, text: str) -> Dict[str, object]:
+        """Parse a free-form user message into a mapping of variables.
+
+        The parser looks for ``key=value`` or ``key:value`` tokens, falling back
+        to passthrough words. Only tokens that match known input keys or model
+        keys are retained.
+        """
+
+        tokens = [part.strip() for part in text.replace(";", ",").split(",")]
+        parsed: Dict[str, object] = {}
+
+        known_keys = set(self.input_mapping.keys()) | set(self.input_mapping.values())
+        for token in tokens:
+            if not token:
+                continue
+            if "=" in token:
+                raw_key, raw_value = token.split("=", 1)
+            elif ":" in token:
+                raw_key, raw_value = token.split(":", 1)
+            else:
+                continue
+
+            key = raw_key.strip()
+            if key not in known_keys:
+                continue
+
+            value_str = raw_value.strip()
+            try:
+                value: object = float(value_str)
+            except ValueError:
+                value = value_str
+            parsed[key] = value
+
+        return parsed
+
+    def rewrap_english(self, human_response: Dict[str, object]) -> str:
+        """Build an English summary of the mapped response for the user."""
+
+        if not human_response:
+            return "No response variables were produced."
+
+        parts = [f"{key} set to {value}" for key, value in human_response.items()]
+        return "; ".join(parts)
+
+    def communicate(
+        self, signal: Dict[str, object], model_fn
+    ) -> Dict[str, object]:  # pragma: no cover - thin wrapper
+        """Execute a model function with mapped inputs and outputs."""
+
+        encoded_signal = self.encode_input(signal)
+        normalized_signal = self.normalize_signal(encoded_signal)
+        model_response = model_fn(normalized_signal)
+        return self.decode_output(model_response)
+
+    def mediate(self, user_text: str, model_fn):
+        """Full pipeline: parse, normalize, respond with variables, rewrap."""
+
+        parsed_human = self.parse_user_signal(user_text)
+        encoded_signal = self.encode_input(parsed_human)
+        normalized_signal = self.normalize_signal(encoded_signal)
+        model_response = model_fn(normalized_signal)
+        human_response = self.decode_output(model_response)
+        english_summary = self.rewrap_english(human_response)
+
+        return {
+            "input_variables": normalized_signal,
+            "model_response": model_response,
+            "human_response": human_response,
+            "english_response": english_summary,
+        }
+
+
 ACTIONS: Sequence[Action] = (
     Action("stay", (0, 0)),
     Action("east", (1, 0)),
