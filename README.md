@@ -17,6 +17,19 @@ Run:
 python rc_trajectory.py
 ```
 
+ASCII-only convergence simulation
+---------------------------------
+Run a deterministic, offline prompt simulation that advances normalized
+variables (S, K, P, B, H) to 1.00 using neutral English prompts and a toy
+scoring function:
+
+```
+python metrics_sim.py --seed 1234 --prompt-count 3 --max-turns 50
+```
+
+The program prints a tab-separated turn log and the final turn's prompts once
+all variables simultaneously reach 1.00.
+
 Outputs: tab-separated time series per step (state, action, feasible size, selected and minimum margin, coherence, trend) plus boundary_crossed flag.
 
 Observed runs (defaults):
