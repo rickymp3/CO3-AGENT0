@@ -1,5 +1,30 @@
 """Minimal RC Trajectory toy system.
 Runs a discrete trajectory over a finite grid, logs feasibility/margin/coherence/trend.
+
+0.83 expands into an auditable, repeatable loop for translation experiments:
+
+* The loop becomes auditable: every sample is tied to a stable ID, seed, prompt,
+  hash, and metric vector, making the run reproducible.
+* Translation is operationalized: context stripping, adversarial breaking, and
+  invariance become measurable behaviors (S, K, P, B, H) instead of subjective
+  impressions.
+* Blinding reduces self-confirmation: a blinded label map prevents operators
+  from steering mid-run based on expectations, tightening inference.
+* Adversaries turn attractors into testable claims: if "remove center" fails
+  while adversaries also fail, the prior is strong; if adversaries succeed,
+  control is real.
+* Metrics-driven next steps become possible: the process selects the next
+  perturbation set based on variance and attractor strength, approaching a
+  self-correcting translational pipeline.
+
+Grounding/guardrail (center, minimal): metric choice defines the lens; the
+harness measures what it encodes. Validation needs metric ablations plus
+independent feature sets.
+
+Security/privacy implication: hashed manifests and deterministic IDs make
+leakage detectable but create a fingerprint of the run, so repo hygiene
+matters. Net: the method becomes a repeatable experiment framework with genuine
+falsifiers—a step from insight to science-like recursion.
 """
 from __future__ import annotations
 
@@ -120,30 +145,6 @@ class CommunicationWrapper:
                 continue
 
             value_str = match.group("value")
-        The parser looks for ``key=value`` or ``key:value`` tokens, falling back
-        to passthrough words. Only tokens that match known input keys or model
-        keys are retained.
-        """
-
-        tokens = [part.strip() for part in text.replace(";", ",").split(",")]
-        parsed: Dict[str, object] = {}
-
-        known_keys = set(self.input_mapping.keys()) | set(self.input_mapping.values())
-        for token in tokens:
-            if not token:
-                continue
-            if "=" in token:
-                raw_key, raw_value = token.split("=", 1)
-            elif ":" in token:
-                raw_key, raw_value = token.split(":", 1)
-            else:
-                continue
-
-            key = raw_key.strip()
-            if key not in known_keys:
-                continue
-
-            value_str = raw_value.strip()
             try:
                 value: object = float(value_str)
             except ValueError:
@@ -161,28 +162,39 @@ class CommunicationWrapper:
         parts = [f"{key} set to {value}" for key, value in human_response.items()]
         return "; ".join(parts)
 
-    def communicate(
-        self, signal: Dict[str, object], model_fn: Callable[[Dict[str, object]], Dict[str, object]]
-        self, signal: Dict[str, object], model_fn
-    ) -> Dict[str, object]:  # pragma: no cover - thin wrapper
-        """Execute a model function with mapped inputs and outputs."""
+    def _run_pipeline(
+        self,
+        signal: Dict[str, object],
+        model_fn: Callable[[Dict[str, object]], Dict[str, object]],
+    ) -> Tuple[Dict[str, object], Dict[str, object], Dict[str, object]]:
+        """Execute encode → normalize → model → decode in one place."""
 
         encoded_signal = self.encode_input(signal)
         normalized_signal = self.normalize_signal(encoded_signal)
         model_response = model_fn(normalized_signal)
-        return self.decode_output(model_response)
+        human_response = self.decode_output(model_response)
+
+        return normalized_signal, model_response, human_response
+
+    def communicate(
+        self,
+        signal: Dict[str, object],
+        model_fn: Callable[[Dict[str, object]], Dict[str, object]],
+    ) -> Dict[str, object]:  # pragma: no cover - thin wrapper
+        """Execute a model function with mapped inputs and outputs."""
+
+        _, _, human_response = self._run_pipeline(signal, model_fn)
+        return human_response
 
     def mediate(
         self, user_text: str, model_fn: Callable[[Dict[str, object]], Dict[str, object]]
     ) -> Dict[str, object]:
-    def mediate(self, user_text: str, model_fn):
         """Full pipeline: parse, normalize, respond with variables, rewrap."""
 
         parsed_human = self.parse_user_signal(user_text)
-        encoded_signal = self.encode_input(parsed_human)
-        normalized_signal = self.normalize_signal(encoded_signal)
-        model_response = model_fn(normalized_signal)
-        human_response = self.decode_output(model_response)
+        normalized_signal, model_response, human_response = self._run_pipeline(
+            parsed_human, model_fn
+        )
         english_summary = self.rewrap_english(human_response)
 
         return {
